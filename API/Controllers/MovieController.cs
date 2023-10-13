@@ -1,87 +1,105 @@
 using Microsoft.AspNetCore.Mvc;
-using Infrastructure;
-using Application.Services;
-using Application.Common.Exceptions;
+using Application.Feature.Movie.Commands;
+using Application.Feature.Movie.Queries;
 using Application.Common.Responses;
+using Application.Common.Exceptions;
 using Domain.Entities;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
-namespace API.Controllers;
-
-[ApiController]
-[Route("api/movies")]
-public class MovieController : ControllerBase
+namespace API.Controllers
 {
-    private readonly MovieService _movieService;
-
-    public MovieController(MovieService MovieService)
+    [ApiController]
+    [Route("api/movies")]
+    public class MovieController : ControllerBase
     {
-        _movieService = MovieService;
-    }
+        private readonly MovieCommandHandler _movieCommandHandler;
+        private readonly MovieQueryHandler _movieQueryHandler;
 
-    // GET api/movies/{id}
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetMovieById(int id)
-    {
-        Movie Movie = await _movieService.GetMovieByIdAsync(id);
-        if (Movie == null)
+        public MovieController(MovieCommandHandler movieCommandHandler, MovieQueryHandler movieQueryHandler)
         {
-            return NotFoundException("Cinema NotFound");
-        }
-        return Ok(new SuccessResponse(Movie));
-    }
-
-    // GET api/movies/{movieId}
-    [HttpGet("movie/{id}")]
-    public async Task<IActionResult> GetMoviesById(int Id)
-    {
-        List<Movie> Movies = await _movieService.GetMoviesByIdAsync(Id);
-        return Ok(new SuccessResponse(Movies));
-    }
-
-    // POST api/movies
-    [HttpPost]
-    public async Task<IActionResult> CreateMovie([FromBody] Movie newMovie)
-    {
-        if (newMovie == null)
-        {
-            return BadRequestException("BadRequest");
+            _movieCommandHandler = movieCommandHandler;
+            _movieQueryHandler = movieQueryHandler;
         }
 
-        await _movieService.CreateNewMovieAsync(newMovie);
-        return CreatedAtAction(nameof(GetMovieById), new { id = newMovie.Id }, newMovie);
-    }
-
-    // PUT api/movies/{id}
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateMovie(int id, [FromBody] Movie updatedMovie)
-    {
-        if (updatedMovie == null || id != updatedMovie.Id)
+        // GET api/movies/{id}
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetMovieById(int id)
         {
-            return BadRequestException("BadRequest");
+            var query = new GetMovieByIdQuery(id);
+            Movie movie = await _movieQueryHandler.Handle(query);
+
+            if (movie == null)
+            {
+                return NotFoundException("Movie Not Found");
+            }
+
+            return Ok(new SuccessResponse(movie));
         }
 
-        var existingMovie = await _movieService.GetMovieByIdAsync(id);
-        if (existingMovie == null)
+        // GET api/movies/movie/{id}
+        [HttpGet("movie/{id}")]
+        public async Task<IActionResult> GetMoviesById(int id)
         {
-            return NotFoundException("Cinema NotFound");
+            var query = new GetMoviesByIdQuery(id);
+            List<Movie> movies = await _movieQueryHandler.Handle(query);
+            return Ok(new SuccessResponse(movies));
         }
 
-        await _movieService.UpdateExistingMovieAsync(updatedMovie);
-        return Ok(new SuccessResponse<Movie>("Movie Updated Successfuly", updatedMovie));
-    }
-
-    // DELETE api/movies/{id}
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteMovie(int id)
-    {
-        var existingMovie = await _movieService.GetMovieByIdAsync(id);
-        if (existingMovie == null)
+        // POST api/movies
+        [HttpPost]
+        public async Task<IActionResult> CreateMovie([FromBody] Movie newMovie)
         {
-            return NotFoundException("Cinema NotFound");
+            if (newMovie == null)
+            {
+                return BadRequestException("Bad Request");
+            }
+
+            var command = new CreateMovieCommand(newMovie);
+            await _movieCommandHandler.Handle(command);
+
+            return CreatedAtAction(nameof(GetMovieById), new { id = newMovie.Id }, newMovie);
         }
 
-        await _movieService.DeleteMovieAsync(id);
-        return Ok(new SuccessResponse<Movie>("Movie Deleted Successfuly", existingMovie));
-    
+        // PUT api/movies/{id}
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateMovie(int id, [FromBody] Movie updatedMovie)
+        {
+            if (updatedMovie == null || id != updatedMovie.Id)
+            {
+                return BadRequestException("Bad Request");
+            }
+
+            var existingMovieQuery = new GetMovieByIdQuery(id);
+            var existingMovie = await _movieQueryHandler.Handle(existingMovieQuery);
+
+            if (existingMovie == null)
+            {
+                return NotFoundException("Movie Not Found");
+            }
+
+            var updateCommand = new UpdateMovieCommand(updatedMovie);
+            await _movieCommandHandler.Handle(updateCommand);
+
+            return Ok(new SuccessResponse<Movie>("Movie Updated Successfully", updatedMovie));
+        }
+
+        // DELETE api/movies/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteMovie(int id)
+        {
+            var existingMovieQuery = new GetMovieByIdQuery(id);
+            var existingMovie = await _movieQueryHandler.Handle(existingMovieQuery);
+
+            if (existingMovie == null)
+            {
+                return NotFoundException("Movie Not Found");
+            }
+
+            var deleteCommand = new DeleteMovieCommand(id);
+            await _movieCommandHandler.Handle(deleteCommand);
+
+            return Ok(new SuccessResponse<Movie>("Movie Deleted Successfully", existingMovie));
+        }
     }
 }
