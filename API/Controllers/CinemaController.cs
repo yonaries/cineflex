@@ -1,84 +1,105 @@
 using Microsoft.AspNetCore.Mvc;
-using Infrastructure;
-using Application.Services;
+using Application.Feature.Cinema.Commands;
+using Application.Feature.Cinema.Queries;
 using Application.Common.Responses;
 using Application.Common.Exceptions;
 using Domain.Entities;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
-namespace API.Controllers;
-
-[ApiController]
-[Route("api/cinemas")]
-public class CinemaController : ControllerBase
+namespace API.Controllers
 {
-	private readonly CinemaService _CinemaService;
-
-    public CinemaController(CinemaService CinemaService)
+    [ApiController]
+    [Route("api/cinemas")]
+    public class CinemaController : ControllerBase
     {
-        _CinemaService = CinemaService;
-    }
+        private readonly CinemaCommandHandler _cinemaCommandHandler;
+        private readonly CinemaQueryHandler _cinemaQueryHandler;
 
-    // GET api/Cinemas
-    [HttpGet]
-    public async Task<IActionResult> GetAllCinemas()
-    {
-        List<Cinema> Cinemas = await _CinemaService.GetAllCinemasAsync();
-        return Ok(new SuccessResponse(Cinemas));
-    }
-
-    // GET api/Cinemas/{id}
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetCinemaById(int id)
-    {
-        Cinema Cinema = await _CinemaService.GetCinemaByIdAsync(id);
-
-        return Ok(new SuccessResponse(Cinemas));
-    }
-
-    // Cinema api/Cinemas
-    [HttpPost]
-    public async Task<IActionResult> CreateCinema([FromBody] Cinema newCinema)
-    {
-        if (newCinema == null)
+        public CinemaController(CinemaCommandHandler cinemaCommandHandler, CinemaQueryHandler cinemaQueryHandler)
         {
-            return BadRequestException("BadRequest");
+            _cinemaCommandHandler = cinemaCommandHandler;
+            _cinemaQueryHandler = cinemaQueryHandler;
         }
 
-        await _CinemaService.CreateNewCinemaAsync(newCinema);
-        return CreatedAtAction(nameof(GetCinemaById), new { id = newCinema.Id }, newCinema);
-    }
-
-    // PUT api/Cinemas/{id}
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateCinema(int id, [FromBody] Cinema updatedCinema)
-    {
-        if (updatedCinema == null || id != updatedCinema.Id)
+        // GET api/cinemas
+        [HttpGet]
+        public async Task<IActionResult> GetAllCinemas()
         {
-            return BadRequestException("BadRequest");
+            var query = new GetCinemasQuery();
+            List<Cinema> cinemas = await _cinemaQueryHandler.Handle(query);
+            return Ok(new SuccessResponse(cinemas));
         }
 
-        var existingCinema = await _CinemaService.GetCinemaByIdAsync(id);
-
-        if (existingCinema == null)
+        // GET api/cinemas/{id}
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetCinemaById(int id)
         {
-            return NotFoundException("Cinema NotFound");
+            var query = new GetCinemaByIdQuery(id);
+            Cinema cinema = await _cinemaQueryHandler.Handle(query);
+
+            if (cinema == null)
+            {
+                return NotFoundException("Cinema Not Found");
+            }
+
+            return Ok(new SuccessResponse(cinema));
         }
 
-        await _CinemaService.UpdateExistingCinemaAsync(updatedCinema);
-        return Ok(new SuccessResponse<Cinema>("Cinema Updated Successfuly",, updatedCinema));
-    }
-
-    // DELETE api/Cinemas/{id}
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteCinema(int id)
-    {
-        var existingCinema = await _CinemaService.GetCinemaByIdAsync(id);
-        if (existingCinema == null)
+        // POST api/cinemas
+        [HttpPost]
+        public async Task<IActionResult> CreateCinema([FromBody] Cinema newCinema)
         {
-            return NotFoundException("Cinema NotFound");
+            if (newCinema == null)
+            {
+                return BadRequestException("Bad Request");
+            }
+
+            var command = new CreateCinemaCommand(newCinema);
+            await _cinemaCommandHandler.Handle(command);
+
+            return CreatedAtAction(nameof(GetCinemaById), new { id = newCinema.Id }, newCinema);
         }
 
-        await _CinemaService.DeleteCinemaAsync(id);
-        return Ok(new SuccessResponse<Cinema>("Cinema Deleted Successfuly", existingCinema));
+        // PUT api/cinemas/{id}
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateCinema(int id, [FromBody] Cinema updatedCinema)
+        {
+            if (updatedCinema == null || id != updatedCinema.Id)
+            {
+                return BadRequestException("Bad Request");
+            }
+
+            var existingCinemaQuery = new GetCinemaByIdQuery(id);
+            var existingCinema = await _cinemaQueryHandler.Handle(existingCinemaQuery);
+
+            if (existingCinema == null)
+            {
+                return NotFoundException("Cinema Not Found");
+            }
+
+            var updateCommand = new UpdateCinemaCommand(updatedCinema);
+            await _cinemaCommandHandler.Handle(updateCommand);
+
+            return Ok(new SuccessResponse<Cinema>("Cinema Updated Successfully", updatedCinema));
+        }
+
+        // DELETE api/cinemas/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteCinema(int id)
+        {
+            var existingCinemaQuery = new GetCinemaByIdQuery(id);
+            var existingCinema = await _cinemaQueryHandler.Handle(existingCinemaQuery);
+
+            if (existingCinema == null)
+            {
+                return NotFoundException("Cinema Not Found");
+            }
+
+            var deleteCommand = new DeleteCinemaCommand(id);
+            await _cinemaCommandHandler.Handle(deleteCommand);
+
+            return Ok(new SuccessResponse<Cinema>("Cinema Deleted Successfully", existingCinema));
+        }
     }
 }
